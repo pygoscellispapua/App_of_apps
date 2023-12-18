@@ -15,9 +15,9 @@ pipeline {
         PIP_BREAK_SYSTEM_PACKAGES = 1
     }
 
-    tools {
-        terraform 'Terraform'
-    }
+#    tools {
+#        terraform 'Terraform'
+#    }
     
     parameters {
         string(name: 'backendDockerTag', defaultValue: '', description: 'Backend docker image tag')
