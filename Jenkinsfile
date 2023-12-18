@@ -1,23 +1,33 @@
-def frontendImage="zuobobrem/frontend"
-def backendImage="zuobobrem/backend"
+def frontendImage="pandaacademy/frontend"
+def backendImage="pandaacademy/backend"
 def backendDockerTag=""
 def frontendDockerTag=""
 def dockerRegistry=""
 def registryCredentials="dockerhub"
 
+
 pipeline {
     agent {
-  label 'agent'
-}
+        label 'agent'
+    }
 
     environment {
         PIP_BREAK_SYSTEM_PACKAGES = 1
     }
 
+    tools {
+        terraform 'Terraform'
+    }
+    
+    parameters {
+        string(name: 'backendDockerTag', defaultValue: '', description: 'Backend docker image tag')
+        string(name: 'frontendDockerTag', defaultValue: '', description: 'Frontend docker image tag')
+    }
+
     stages {
         stage('Get Code') {
             steps {
-                checkout scm
+                checkout scm // Get some code from a GitHub repository
             }
         }
 
@@ -31,11 +41,13 @@ pipeline {
                 }
             }
         }
+
         stage('Clean running containers') {
             steps {
                 sh "docker rm -f frontend backend"
             }
         }
+
         stage('Deploy application') {
             steps {
                 script {
@@ -47,18 +59,41 @@ pipeline {
                     }
                 }
             }
-       stage('Deploy application') {
+        }
+
+        stage('Selenium tests') {
             steps {
-                script {
-                    withEnv(["FRONTEND_IMAGE=$frontendImage:$frontendDockerTag", 
-                             "BACKEND_IMAGE=$backendImage:$backendDockerTag"]) {
-                       docker.withRegistry("$dockerRegistry", "$registryCredentials") {
-                            sh "docker-compose up -d"
-                        }
-                    }
+                sh "pip3 install -r test/selenium/requirements.txt"
+                sh "python3 -m pytest test/selenium/frontendTest.py"
+            }
+        }
+
+        stage('Run terraform') {
+            steps {
+                dir('Terraform') {                
+                    git branch: 'main', url: 'https://github.com/Panda-Academy-Core-2-0/Terraform'
+                    withAWS(credentials:'AWS', region: 'us-east-1') {
+                            sh 'terraform init -backend-config=bucket=panda-academy-panda-devops-core-n'
+                            sh 'terraform apply -auto-approve -var bucket_name=panda-academy-panda-devops-core-n'
+                            
+                    } 
                 }
             }
+        }
 
+        stage('Run Ansible') {
+               steps {
+                   script {
+                        sh "pip3 install -r requirements.txt"
+                        sh "ansible-galaxy install -r requirements.yml"
+                        withEnv(["FRONTEND_IMAGE=$frontendImage:$frontendDockerTag", 
+                                 "BACKEND_IMAGE=$backendImage:$backendDockerTag"]) {
+                            ansiblePlaybook inventory: 'inventory', playbook: 'playbook.yml'
+                        }
+                }
+            }
+        }
+    }
     post {
         always {
           sh "docker-compose down"
